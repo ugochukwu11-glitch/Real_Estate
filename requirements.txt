@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pandas
+beautifulsoup4
+requests
+lxml
+python-dotenv
+

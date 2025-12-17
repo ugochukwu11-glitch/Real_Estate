@@ -2,7 +2,7 @@ from fastapi import FastAPI, Query
 import pandas as pd
 
 # --- Load cleaned dataset ---
-df = pd.read_csv("dataset/cleaned_properties.csv")
+df = pd.read_csv("dataset/new_cleaned_properties.csv")
 
 # Ensure date columns are datetime
 df['added_date'] = pd.to_datetime(df['added_date'], errors='coerce')

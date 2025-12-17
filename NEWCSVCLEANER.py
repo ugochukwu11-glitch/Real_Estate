@@ -21,7 +21,6 @@ cities = [
     "oyo", "delta", "ogun", "osun", "edo"
 ]
 
-
 def extract_city(location):
     loc = str(location).lower()
     for city in cities:
@@ -31,7 +30,6 @@ def extract_city(location):
     if parts:
         return parts[-1].title()
     return None
-
 
 df_no_dup["city"] = df_no_dup["location"].apply(extract_city)
 
@@ -44,20 +42,16 @@ df_no_dup["city"] = (
     .str.title()
 )
 
-# --- Step 5: Remove rentals / shortlets (check property_type + title + price) ---
+# --- Step 5: Remove rentals / shortlets ---
 exclude_keywords = ["for rent", "shortlet", "lease"]
 pattern = "|".join(exclude_keywords)
 
-# Drop if any keyword appears in property_type or title
 df_no_dup = df_no_dup[~df_no_dup["property_type"].str.contains(pattern)]
 df_no_dup = df_no_dup[~df_no_dup["title"].str.contains(pattern)]
-
-# Drop listings that have /day or /year in price (likely rentals)
 df_no_dup = df_no_dup[~df_no_dup["price"].astype(str).str.contains("/day|/year", regex=True)]
 
 # --- Step 6: Clean price column ---
-EXCHANGE_RATE_USD_NGN = 1438  # adjust to current rate
-
+EXCHANGE_RATE_USD_NGN = 1438
 
 def clean_price(price):
     if pd.isna(price):
@@ -65,18 +59,14 @@ def clean_price(price):
 
     price_str = str(price).lower().replace(",", "").strip()
 
-    # /sqm case (lands)
     if "/sqm" in price_str:
-        num_match = re.search(r"[\d\.]+", price_str)
-        return float(num_match.group()) if num_match else None
+        num = re.search(r"[\d\.]+", price_str)
+        return float(num.group()) if num else None
 
-    # Convert $ to NGN
     if price_str.startswith("$"):
-        num_match = re.search(r"[\d\.]+", price_str)
-        if num_match:
-            return float(num_match.group()) * EXCHANGE_RATE_USD_NGN
+        num = re.search(r"[\d\.]+", price_str)
+        return float(num.group()) * EXCHANGE_RATE_USD_NGN if num else None
 
-    # Remove ₦ or other symbols
     price_str = re.sub(r"[^\d\.]", "", price_str)
 
     try:
@@ -84,18 +74,15 @@ def clean_price(price):
     except:
         return None
 
-
 df_no_dup["price"] = df_no_dup["price"].apply(clean_price)
 
 # --- Step 7: Derived columns for analytics ---
 
-# Price per bedroom (avoid divide-by-zero)
 df_no_dup["price_per_bedroom"] = df_no_dup.apply(
     lambda x: x["price"] / x["bedrooms"] if pd.notnull(x["bedrooms"]) and x["bedrooms"] > 0 else None,
     axis=1
 )
 
-# Price category
 def categorize_price(p):
     if pd.isna(p):
         return None
@@ -108,14 +95,80 @@ def categorize_price(p):
 
 df_no_dup["price_category"] = df_no_dup["price"].apply(categorize_price)
 
-# Month posted
 df_no_dup["added_date"] = pd.to_datetime(df_no_dup["added_date"], errors="coerce")
 df_no_dup["month_posted"] = df_no_dup["added_date"].dt.to_period("M").astype(str)
 
+# --- Step 7A: Categorize Property Type (New Feature) ---
+
+def categorize_property_type(text):
+    t = str(text).lower()
+
+    # Land
+    if "mixed-use land" in t:
+        return "mixed-use land"
+    if "commercial land" in t:
+        return "commercial land"
+    if "land" in t:
+        return "land"
+
+    # Duplexes / Houses
+    if "fully detached" in t:
+        return "fully detached"
+    if "semi detached" in t or "semi-detached" in t:
+        return "semi detached duplex"
+    if "terraced" in t and "duplex" in t:
+        return "terraced duplex"
+    if "detached" in t and "duplex" in t:
+        return "detached duplex"
+    if "duplex" in t:
+        return "house"
+    if "bungalow" in t:
+        return "bungalow"
+    if "storey" in t:
+        return "house"
+
+    # Apartments
+    if "block of flats" in t:
+        return "block of flats"
+    if "mini flat" in t:
+        return "mini flat"
+    if "self contain" in t or "self-contained" in t:
+        return "self contain"
+    if "flat" in t or "apartment" in t:
+        return "flat/apartment"
+
+    # Commercial
+    if "plaza" in t or "complex" in t or "mall" in t:
+        return "plaza / complex / mall"
+    if "hotel" in t:
+        return "hotel / guest house"
+    if "office" in t:
+        return "office space"
+    if "shop" in t:
+        return "shop"
+    if "warehouse" in t:
+        return "warehouse"
+    if "factory" in t:
+        return "factory"
+    if "tank farm" in t:
+        return "tank farm"
+    if "commercial" in t:
+        return "commercial property"
+
+    # Mixed-use building
+    if "mixed-use" in t:
+        return "mixed-use building"
+
+    return "house"
+
+df_no_dup["property_category"] = df_no_dup["property_type"].apply(categorize_property_type)
+
 # --- Step 8: Save cleaned CSV ---
-df_no_dup.to_csv("dataset/cleaned_properties.csv", index=False)
+df_no_dup.to_csv("dataset/new_cleaned_properties.csv", index=False)
 
 print("\n✅ Done!")
 print(f"Rows after cleaning: {df_no_dup.shape[0]}")
+print("Unique property categories:")
+print(df_no_dup['property_category'].value_counts().head(20))
 print("Unique cities found:")
 print(df_no_dup['city'].value_counts().head(20))

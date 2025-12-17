@@ -1,6 +1,19 @@
 import pandas as pd
 import streamlit as st
 
+# helper functions
+def calculate_growth(df):
+    df = df.sort_values("month_posted")
+    df["MoM_growth_%"] = df["price"].pct_change() * 100
+    df["YoY_growth_%"] = df["price"].pct_change(12) * 100
+    return df
+
+
+
+
+def to_csv(df):
+    return df.to_csv(index=False).encode("utf-8")
+
 # ======================================================
 # PAGE CONFIG
 # ======================================================
@@ -85,6 +98,14 @@ price_range = st.sidebar.slider(
 # ======================================================
 filtered_df = buildings_df.copy()
 
+growth_df = (
+    filtered_df
+    .groupby(["city", "month_posted"])["price"]
+    .median()
+    .reset_index()
+)
+
+
 if selected_city != "All":
     filtered_df = filtered_df[filtered_df["city"] == selected_city]
 
@@ -138,21 +159,56 @@ with tab1:
 
     st.dataframe(top_areas, use_container_width=True)
 
+    st.download_button(
+        label="⬇️ Download Top Areas (CSV)",
+        data=to_csv(top_areas),
+        file_name="top_expensive_areas.csv",
+        mime="text/csv"
+    )
+
 # ======================================================
 # TAB 2 — MONTHLY TRENDS
 # ======================================================
 with tab2:
-    st.subheader("Monthly Median Price Trend")
-    st.caption("Shows how median building prices change over time.")
-
-    monthly_trend = (
-        filtered_df
-        .groupby("month_posted")["price"]
-        .median()
-        .reset_index()
+    st.subheader("Market Growth Trends")
+    st.caption(
+        "Median prices with Month-over-Month (MoM) and Year-over-Year (YoY) growth. "
+        "Growth metrics are only meaningful where sufficient history exists."
     )
 
-    st.line_chart(monthly_trend.set_index("month_posted")["price"])
+    city_for_growth = st.selectbox(
+        "Select city for growth analysis",
+        sorted(growth_df["city"].unique())
+    )
+
+    city_growth = growth_df[growth_df["city"] == city_for_growth].copy()
+    city_growth = calculate_growth(city_growth)
+
+    # Display growth table
+    st.dataframe(
+        city_growth.tail(15),
+        use_container_width=True
+    )
+
+    # Plot median price trend
+    st.line_chart(
+        city_growth.set_index("month_posted")["price"]
+    )
+
+    # Show latest growth numbers
+    latest = city_growth.dropna().iloc[-1:] if not city_growth.dropna().empty else None
+
+    if latest is not None:
+        col1, col2 = st.columns(2)
+        col1.metric(
+            "Latest MoM Growth",
+            f"{latest['MoM_growth_%'].values[0]:.2f} %"
+        )
+        col2.metric(
+            "Latest YoY Growth",
+            f"{latest['YoY_growth_%'].values[0]:.2f} %"
+        )
+
 
 # ======================================================
 # TAB 3 — LAND INTELLIGENCE
@@ -190,6 +246,13 @@ with tab3:
         )
 
         st.dataframe(top_land, use_container_width=True)
+
+        st.download_button(
+            label="⬇️ Download Land Prices (CSV)",
+            data=to_csv(top_land),
+            file_name="land_price_intelligence.csv",
+            mime="text/csv"
+        )
 
 # ======================================================
 # TAB 4 — VALUE ANALYSIS
@@ -241,6 +304,12 @@ with tab5:
     )
 
     st.dataframe(comparison_table, use_container_width=True)
+    st.download_button(
+        label="⬇️ Download City Comparison (CSV)",
+        data=to_csv(comparison_table),
+        file_name="city_comparison.csv",
+        mime="text/csv"
+    )
 
 # ======================================================
 # FOOTER
